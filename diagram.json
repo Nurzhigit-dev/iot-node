@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "author": "",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "board-bmp180", "id": "bmp", "top": -120, "left": 150, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "bmp:SDA", "esp:8", "green", [] ],
+    [ "bmp:SCL", "esp:9", "blue", [] ],
+    [ "bmp:3.3V", "esp:3V3.1", "red", [] ],
+    [ "bmp:GND", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}
