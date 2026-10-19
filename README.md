@@ -4,7 +4,7 @@ An industrial-style IoT sensor node written in C with ESP-IDF. An ESP32-S3 reads
 
 The firmware is built to survive real network conditions: it timestamps every reading on the device, buffers readings in flash while the network is down and re-sends them once it’s back, reconnects with exponential backoff, and can be updated over the air with automatic rollback.
 
-!image.png
+<img width="1919" height="471" alt="image" src="https://github.com/user-attachments/assets/45f514d9-a3c9-44f2-904d-39fef7a86df7" />
 
 ## Architecture
 
