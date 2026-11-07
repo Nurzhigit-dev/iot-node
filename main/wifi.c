@@ -22,12 +22,30 @@ static void retry_timer_cb(void *arg)
     esp_wifi_connect();
 }
 
+/* The disconnect reasons you actually run into when bringing up a real board */
+static const char *reason_hint(uint8_t reason)
+{
+    switch (reason) {
+    case WIFI_REASON_NO_AP_FOUND:
+        return ", network not found: check the SSID, 2.4 GHz only";
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        return ", wrong password?";
+    case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+        return ", the network's security mode is not supported";
+    default:
+        return "";
+    }
+}
+
 /* Exponential backoff with jitter: wait, then double the wait for next time */
-static void schedule_reconnect(void)
+static void schedule_reconnect(uint8_t reason)
 {
     uint32_t jitter = esp_random() % (s_backoff_ms / 5 + 1);   /* up to +20% */
     uint32_t delay_ms = s_backoff_ms + jitter;
-    ESP_LOGW(TAG, "Disconnected, next attempt in %lu ms", (unsigned long)delay_ms);
+    ESP_LOGW(TAG, "Disconnected (reason %u%s), next attempt in %lu ms",
+             reason, reason_hint(reason), (unsigned long)delay_ms);
 
     (void)esp_timer_stop(s_retry_timer);
     esp_timer_start_once(s_retry_timer, (uint64_t)delay_ms * 1000);
@@ -43,8 +61,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)data;
         xEventGroupClearBits(s_wifi_events, WIFI_CONNECTED_BIT);
-        schedule_reconnect();
+        schedule_reconnect(event->reason);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         ESP_LOGI(TAG, "Connected, IP " IPSTR, IP2STR(&event->ip_info.ip));
@@ -80,6 +99,7 @@ esp_err_t wifi_connect(void)
             .ssid = WIFI_SSID,
             .password = WIFI_PASSWORD,
             .channel = WIFI_CHANNEL,
+            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,   /* also join WPA3 routers */
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));

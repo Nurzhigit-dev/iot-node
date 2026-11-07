@@ -1,0 +1,23 @@
+# Real board, OTA update 1.0.0 -> 1.0.1 over Wi-Fi (this run: NTP did not answer, HTTP time fallback was used)
+# host time  device log (USB serial)
+
+18:54:02  I (302808) ota: Downloading http://192.168.30.7:8000/iot-node-1.0.1.bin
+18:54:02  I (303008) ota: Updating 1.0.0 -> 1.0.1
+18:54:06  I (307048) main: Published: 27.60 C, 979.86 hPa
+18:54:11  I (312018) main: Published: 27.80 C, 980.37 hPa
+18:54:16  I (317028) main: Published: 27.90 C, 980.49 hPa
+18:54:21  I (321998) main: Published: 27.70 C, 979.97 hPa
+18:54:23  I (324008) ota: Downloaded 100%
+18:54:23  I (324338) ota: Update written to the other slot, restarting
+18:54:24  rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+18:54:24  I (330) boot: Loaded app from partition at offset 0x1a0000
+18:54:24  I (358) app_init: App version:      1.0.1
+18:54:24  I (456) main: Firmware version 1.0.1 (hardware build)
+18:54:24  W (456) ota: Firmware not confirmed yet: rollback in 120 s unless MQTT connects
+18:54:25  I (566) buffer: Ready, 0 readings waiting from before
+18:54:25  I (586) bmp180: BMP180 ready (chip id 0x55)
+18:54:43  W (19016) main: NTP did not answer, trying HTTP time
+18:54:43  I (19156) main: Time set from HTTP Date header: Sat, 07 Nov 2026 13:54:43 GMT
+18:54:43  W (19346) main: Not delivered, buffered (1 stored)
+18:54:43  I (19456) main: MQTT connected
+18:54:43  I (19506) ota: New firmware confirmed, rollback cancelled

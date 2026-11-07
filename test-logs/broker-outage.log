@@ -1,0 +1,54 @@
+# Broker outage: mosquitto stopped 21:03:13, started 21:04:44
+# 18 readings kept in flash, re-sent oldest-first after reconnecting
+# host time  device log (Wokwi serial port)
+
+21:03:02  I (94242) main: Published: 24.00 C, 1013.27 hPa
+21:03:07  I (99252) main: Published: 24.00 C, 1013.27 hPa
+21:03:12  I (104242) main: Published: 24.00 C, 1013.27 hPa
+21:03:14  E (106672) main: MQTT error
+21:03:14  W (106692) main: MQTT disconnected
+21:03:18  W (109512) main: Not delivered, buffered (1 stored)
+21:03:22  W (114142) main: Not delivered, buffered (2 stored)
+21:03:22  E (114212) main: MQTT error
+21:03:22  W (114212) main: MQTT disconnected
+21:03:27  W (119142) main: Not delivered, buffered (3 stored)
+21:03:27  E (119242) main: MQTT error
+21:03:27  W (119242) main: MQTT disconnected
+21:03:32  W (124142) main: Not delivered, buffered (4 stored)
+21:03:35  E (126762) main: MQTT error
+21:03:35  W (126762) main: MQTT disconnected
+21:03:37  W (129142) main: Not delivered, buffered (5 stored)
+21:03:42  W (134142) main: Not delivered, buffered (6 stored)
+21:03:42  E (134282) main: MQTT error
+21:03:42  W (134282) main: MQTT disconnected
+21:03:47  W (139142) main: Not delivered, buffered (7 stored)
+21:03:49  E (141802) main: MQTT error
+21:03:49  W (141802) main: MQTT disconnected
+21:03:52  W (144142) main: Not delivered, buffered (8 stored)
+21:03:58  W (149142) main: Not delivered, buffered (9 stored)
+21:03:58  E (149322) main: MQTT error
+21:03:58  W (149322) main: MQTT disconnected
+21:04:03  W (154142) main: Not delivered, buffered (10 stored)
+21:04:05  E (156842) main: MQTT error
+21:04:05  W (156842) main: MQTT disconnected
+21:04:08  W (159142) main: Not delivered, buffered (11 stored)
+21:04:13  W (164142) main: Not delivered, buffered (12 stored)
+21:04:13  E (164362) main: MQTT error
+21:04:13  W (164362) main: MQTT disconnected
+21:04:18  W (169152) main: Not delivered, buffered (13 stored)
+21:04:20  E (171882) main: MQTT error
+21:04:20  W (171882) main: MQTT disconnected
+21:04:22  W (174142) main: Not delivered, buffered (14 stored)
+21:04:25  E (176912) main: MQTT error
+21:04:25  W (176912) main: MQTT disconnected
+21:04:27  W (179142) main: Not delivered, buffered (15 stored)
+21:04:30  E (181942) main: MQTT error
+21:04:30  W (181942) main: MQTT disconnected
+21:04:32  W (184142) main: Not delivered, buffered (16 stored)
+21:04:37  W (189142) main: Not delivered, buffered (17 stored)
+21:04:38  E (189462) main: MQTT error
+21:04:38  W (189462) main: MQTT disconnected
+21:04:42  W (194142) main: Not delivered, buffered (18 stored)
+21:04:45  I (197002) main: MQTT connected
+21:04:48  I (199602) main: Re-sent 18 buffered readings, 0 left
+21:04:48  I (199982) main: Published: 24.00 C, 1013.27 hPa

@@ -1,0 +1,11 @@
+# Real ESP32-S3 + BMP180 on Wi-Fi: boot after flashing, sensor found on the third try, first reading
+# host time  device log (USB serial, Wi-Fi driver chatter removed)
+
+18:49:00  I (738) wifi: Connecting to "your-wifi"...
+18:49:03  I (3988) wifi: Connected, IP 192.168.30.13
+18:49:06  I (6808) main: Time synchronized
+18:49:06  E (6838) bmp180: No device at 0x77 (ESP_ERR_NOT_FOUND). Check the wiring.
+18:49:06  W (6838) main: No sensor, measurement skipped
+18:49:07  I (7778) main: MQTT connected
+18:49:11  I (11828) bmp180: BMP180 ready (chip id 0x55)
+18:49:11  I (12058) main: Published: 28.80 C, 980.36 hPa

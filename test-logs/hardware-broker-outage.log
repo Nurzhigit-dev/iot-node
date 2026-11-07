@@ -1,0 +1,27 @@
+# Real board, broker stopped 18:49:55, started 18:51:28: 19 readings kept in flash, re-sent after reconnecting
+# host time  device log (USB serial)
+
+18:49:51  I (51998) main: Published: 28.80 C, 980.39 hPa
+18:49:57  I (57118) main: Published: 28.80 C, 980.33 hPa
+18:50:01  W (61988) main: Not delivered, buffered (1 stored)
+18:50:06  W (66888) main: Not delivered, buffered (2 stored)
+18:50:11  W (71888) main: Not delivered, buffered (3 stored)
+18:50:16  W (76888) main: Not delivered, buffered (4 stored)
+18:50:21  W (81888) main: Not delivered, buffered (5 stored)
+18:50:26  W (86888) main: Not delivered, buffered (6 stored)
+18:50:31  W (91888) main: Not delivered, buffered (7 stored)
+18:50:36  W (96898) main: Not delivered, buffered (8 stored)
+18:50:41  W (101888) main: Not delivered, buffered (9 stored)
+18:50:46  W (106888) main: Not delivered, buffered (10 stored)
+18:50:51  W (111888) main: Not delivered, buffered (11 stored)
+18:50:56  W (116888) main: Not delivered, buffered (12 stored)
+18:51:01  W (121888) main: Not delivered, buffered (13 stored)
+18:51:06  W (126888) main: Not delivered, buffered (14 stored)
+18:51:11  W (131888) main: Not delivered, buffered (15 stored)
+18:51:16  W (136888) main: Not delivered, buffered (16 stored)
+18:51:21  W (141888) main: Not delivered, buffered (17 stored)
+18:51:26  W (146888) main: Not delivered, buffered (18 stored)
+18:51:31  W (151888) main: Not delivered, buffered (19 stored)
+18:51:31  I (152468) main: MQTT connected
+18:51:36  I (157268) main: Re-sent 19 buffered readings, 0 left
+18:51:37  I (157578) main: Published: 28.20 C, 980.41 hPa

@@ -24,6 +24,16 @@ esp_err_t buffer_init(void)
         ESP_LOGE(TAG, "Mounting storage failed: %s", esp_err_to_name(err));
         return err;
     }
+    /* Power lost during buffer_drop_front()? Without the old file the copy is complete:
+       finish the swap. With both files the copy may be partial: keep the old file. */
+    struct stat st;
+    if (stat(TMP_FILE, &st) == 0) {
+        if (stat(BUF_FILE, &st) != 0) {
+            rename(TMP_FILE, BUF_FILE);
+        } else {
+            remove(TMP_FILE);
+        }
+    }
     ESP_LOGI(TAG, "Ready, %u readings waiting from before", (unsigned)buffer_count());
     return ESP_OK;
 }
