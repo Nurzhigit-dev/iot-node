@@ -136,23 +136,45 @@ static void compensate(int32_t ut, int32_t up, float *temp_c, float *pressure_hp
     *pressure_hpa = p / 100.0f;
 }
 
+/* Wiring help: list every address that answers on the bus */
+static void scan_bus(i2c_master_bus_handle_t bus)
+{
+    int found = 0;
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        if (i2c_master_probe(bus, addr, 20) == ESP_OK) {
+            ESP_LOGW(TAG, "  something answers at 0x%02X", addr);
+            found++;
+        }
+    }
+    if (found == 0) {
+        ESP_LOGW(TAG, "  nothing answers on the bus: check SDA/SCL pins, 3.3 V and GND");
+    }
+}
+
 esp_err_t bmp180_init(i2c_master_bus_handle_t bus)
 {
+    static bool scanned = false;
     esp_err_t err = i2c_master_probe(bus, BMP180_ADDR, I2C_TIMEOUT_MS);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "No device at 0x%02X (%s). Check the wiring.",
                  BMP180_ADDR, esp_err_to_name(err));
+        if (!scanned) {            /* once is enough, init is retried every cycle */
+            scan_bus(bus);
+            scanned = true;
+        }
         return err;
     }
 
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = BMP180_ADDR,
-        .scl_speed_hz = I2C_FREQ_HZ,
-    };
-    err = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
-    if (err != ESP_OK) {
-        return err;
+    if (s_dev == NULL) {
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = BMP180_ADDR,
+            .scl_speed_hz = I2C_FREQ_HZ,
+        };
+        err = i2c_master_bus_add_device(bus, &dev_cfg, &s_dev);
+        if (err != ESP_OK) {
+            return err;
+        }
     }
 
     uint8_t chip_id = 0;
@@ -161,7 +183,10 @@ esp_err_t bmp180_init(i2c_master_bus_handle_t bus)
         return err;
     }
     if (chip_id != BMP180_CHIP_ID) {
-        ESP_LOGE(TAG, "Unexpected chip id 0x%02X (expected 0x%02X)", chip_id, BMP180_CHIP_ID);
+        /* Boards sold as "BMP180" are sometimes the newer, incompatible BMP280/BME280 */
+        ESP_LOGE(TAG, "Unexpected chip id 0x%02X (expected 0x%02X)%s", chip_id, BMP180_CHIP_ID,
+                 chip_id == 0x58 ? ": this is a BMP280" :
+                 chip_id == 0x60 ? ": this is a BME280" : "");
         return ESP_ERR_NOT_FOUND;
     }
 

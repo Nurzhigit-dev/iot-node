@@ -5,9 +5,10 @@
 #include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
+#include "freertos/queue.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_netif_sntp.h"
 #include "driver/i2c_master.h"
@@ -25,10 +26,9 @@ static const char *TAG = "main";
 static esp_mqtt_client_handle_t s_mqtt;
 static volatile bool s_mqtt_connected = false;
 
-/* Set by the MQTT task when the broker acknowledges a QoS 1 message (PUBACK) */
-#define ACK_BIT BIT0
-static EventGroupHandle_t s_ack_events;
-static volatile int s_acked_msg_id = -1;
+/* Message IDs the broker has acknowledged (PUBACK), filled by the MQTT task */
+#define ACK_QUEUE_LEN 8
+static QueueHandle_t s_ack_queue;
 
 /* ---------- MQTT ---------- */
 
@@ -52,8 +52,7 @@ static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         s_mqtt_connected = false;
         break;
     case MQTT_EVENT_PUBLISHED:
-        s_acked_msg_id = event->msg_id;
-        xEventGroupSetBits(s_ack_events, ACK_BIT);
+        xQueueSend(s_ack_queue, &event->msg_id, 0);   /* full = nobody waiting, fine to drop */
         break;
     case MQTT_EVENT_DATA:
         if ((size_t)event->topic_len == strlen(MQTT_OTA_TOPIC) &&
@@ -62,7 +61,7 @@ static void mqtt_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         }
         break;
     case MQTT_EVENT_ERROR:
-        ESP_LOGE(TAG, "MQTT error");
+        ESP_LOGE(TAG, "MQTT error (broker %s)", MQTT_BROKER_URI);
         break;
     default:
         break;
@@ -78,28 +77,36 @@ static bool publish_reading(const reading_t *r)
                        "{\"ts\":%lld,\"temperature\":%.2f,\"pressure\":%.2f}",
                        (long long)r->ts_ms, r->temperature, r->pressure);
 
-    xEventGroupClearBits(s_ack_events, ACK_BIT);
+    xQueueReset(s_ack_queue);
     int msg_id = esp_mqtt_client_publish(s_mqtt, MQTT_DATA_TOPIC, payload, len, 1, 0);
     if (msg_id < 0) {
         return false;
     }
-    EventBits_t bits = xEventGroupWaitBits(s_ack_events, ACK_BIT, pdTRUE, pdFALSE,
-                                           pdMS_TO_TICKS(MQTT_ACK_TIMEOUT_MS));
-    return (bits & ACK_BIT) && s_acked_msg_id == msg_id;
+    /* Other PUBACKs can arrive first (the status message, late re-sends after a
+       reconnect), so keep waiting until ours shows up or the time is over */
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(MQTT_ACK_TIMEOUT_MS);
+    TickType_t waited;
+    while ((waited = xTaskGetTickCount() - start) < timeout) {
+        int acked;
+        if (xQueueReceive(s_ack_queue, &acked, timeout - waited) == pdTRUE && acked == msg_id) {
+            return true;
+        }
+    }
+    return false;
 }
 
-/* Send buffered readings, oldest first. Returns true if the buffer is now empty. */
+/* Send buffered readings, oldest first, for at most FLUSH_BUDGET_MS so that a long
+   backlog doesn't hold up the next measurement. Returns true if the buffer is now empty. */
 static bool flush_buffer(void)
 {
     static reading_t batch[FLUSH_BATCH];
+    const int64_t deadline_us = esp_timer_get_time() + (int64_t)FLUSH_BUDGET_MS * 1000;
+    size_t n;
 
-    while (s_mqtt_connected) {
-        size_t n = buffer_read_front(batch, FLUSH_BATCH);
-        if (n == 0) {
-            return true;
-        }
+    while (s_mqtt_connected && (n = buffer_read_front(batch, FLUSH_BATCH)) > 0) {
         size_t sent = 0;
-        while (sent < n && publish_reading(&batch[sent])) {
+        while (sent < n && esp_timer_get_time() < deadline_us && publish_reading(&batch[sent])) {
             sent++;
         }
         if (sent > 0) {
@@ -108,10 +115,10 @@ static bool flush_buffer(void)
                      (unsigned)sent, (unsigned)buffer_count());
         }
         if (sent < n) {
-            return false;              /* connection trouble, try again next round */
+            return false;              /* out of time or connection trouble: continue next round */
         }
     }
-    return false;
+    return buffer_count() == 0;
 }
 
 /* ---------- Time ---------- */
@@ -217,10 +224,12 @@ static void nvs_init(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Firmware version %s", ota_running_version());
+    ESP_LOGI(TAG, "Firmware version %s (%s build)", ota_running_version(),
+             USE_SIMULATOR ? "simulator" : "hardware");
+    ota_init();   /* first thing: a fresh update must prove itself or be rolled back */
     nvs_init();
     ESP_ERROR_CHECK(buffer_init());
-    s_ack_events = xEventGroupCreate();
+    s_ack_queue = xQueueCreate(ACK_QUEUE_LEN, sizeof(int));
 
     /* 1. Sensor */
     i2c_master_bus_config_t bus_cfg = {
@@ -233,10 +242,9 @@ void app_main(void)
     };
     i2c_master_bus_handle_t bus;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus));
-    if (bmp180_init(bus) != ESP_OK) {
-        ESP_LOGE(TAG, "Sensor not available, stopping");
-        return;
-    }
+    /* Without a sensor we still go online, so status and OTA keep working;
+       the main loop keeps looking for it, so wiring can be fixed while running */
+    bool sensor_ready = (bmp180_init(bus) == ESP_OK);
 
     /* 2. Network and time */
     wifi_connect();
@@ -262,8 +270,13 @@ void app_main(void)
     while (1) {
         bool buffer_empty = (buffer_count() == 0) || flush_buffer();
 
+        if (!sensor_ready) {
+            sensor_ready = (bmp180_init(bus) == ESP_OK);
+        }
         float t, p;
-            if (!time_is_valid() && !time_from_http()) {
+        if (!sensor_ready) {
+            ESP_LOGW(TAG, "No sensor, measurement skipped");
+        } else if (!time_is_valid() && !time_from_http()) {
             ESP_LOGW(TAG, "No valid time yet, measurement skipped");
         } else if (bmp180_read(&t, &p) == ESP_OK) {
             reading_t r = { .ts_ms = now_ms(), .temperature = t, .pressure = p };

@@ -2,3 +2,6 @@
 version = 1
 firmware = 'build/flasher_args.json'
 elf = 'build/iot-node.elf'
+# The simulated serial port is also reachable over TCP, e.g. for logging:
+#   idf.py -p rfc2217://localhost:4000 monitor
+rfc2217ServerPort = 4000

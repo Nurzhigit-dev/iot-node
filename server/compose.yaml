@@ -6,6 +6,7 @@ services:
       - "1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
     restart: unless-stopped
 
   influxdb:
@@ -27,7 +28,7 @@ services:
     restart: unless-stopped
 
   telegraf:
-    image: telegraf:latest
+    image: telegraf:1.40
     container_name: telegraf
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
@@ -37,7 +38,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2
     container_name: grafana
     ports:
       - "3000:3000"
@@ -50,6 +51,7 @@ services:
     depends_on:
       - influxdb
     restart: unless-stopped
+
   firmware:
     image: nginx:alpine
     container_name: firmware
@@ -60,6 +62,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  mosquitto-data:
   influxdb-data:
   influxdb-config:
   grafana-data:

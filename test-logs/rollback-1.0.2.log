@@ -1,0 +1,51 @@
+# Rollback: OTA to a deliberately broken 1.0.2 (wrong MQTT port, 30 s confirm timeout)
+# host time  device log (Wokwi serial port)
+
+21:05:21  I (232772) ota: Downloading http://host.wokwi.internal:8000/iot-node-1.0.2-broken.bin
+21:05:21  I (232902) ota: Updating 1.0.1 -> 1.0.2
+21:05:23  I (234432) main: Published: 24.00 C, 1013.27 hPa
+21:05:30  I (239432) main: Published: 24.00 C, 1013.27 hPa
+21:05:36  I (244392) main: Published: 24.00 C, 1013.27 hPa
+21:05:42  I (249402) main: Published: 24.00 C, 1013.27 hPa
+21:05:45  I (252472) ota: Downloaded 100%
+21:05:47  I (254282) main: Published: 24.00 C, 1013.27 hPa
+21:05:47  I (254302) ota: Update written to the other slot, restarting
+21:05:48  rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+21:05:48  I (27314) boot: Loaded app from partition at offset 0x20000
+21:05:48  I (13678) app_init: App version:      1.0.2
+21:05:49  I (13767) main: Firmware version 1.0.2 (simulator build)
+21:05:49  W (13767) ota: Firmware not confirmed yet: rollback in 30 s unless MQTT connects
+21:05:50  I (14107) buffer: Ready, 0 readings waiting from before
+21:05:50  I (14197) bmp180: BMP180 ready (chip id 0x55)
+21:05:55  I (19317) main: Time synchronized
+21:05:55  E (19397) main: MQTT error
+21:05:55  W (19397) main: MQTT disconnected
+21:05:56  W (19807) main: Not delivered, buffered (1 stored)
+21:06:00  E (24417) main: MQTT error
+21:06:00  W (24427) main: MQTT disconnected
+21:06:00  W (24447) main: Not delivered, buffered (2 stored)
+21:06:05  W (29417) main: Not delivered, buffered (3 stored)
+21:06:08  E (31937) main: MQTT error
+21:06:08  W (31947) main: MQTT disconnected
+21:06:10  W (34417) main: Not delivered, buffered (4 stored)
+21:06:15  W (39417) main: Not delivered, buffered (5 stored)
+21:06:15  E (39457) main: MQTT error
+21:06:15  W (39467) main: MQTT disconnected
+21:06:19  E (43777) ota: New firmware did not reach MQTT within 30 s, rolling back
+21:06:20  E (44487) main: MQTT error
+21:06:20  W (44487) main: MQTT disconnected
+21:06:20  rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+21:06:21  I (36580) boot: Loaded app from partition at offset 0x1a0000
+21:06:21  I (18311) app_init: App version:      1.0.1
+21:06:21  I (18400) main: Firmware version 1.0.1 (simulator build)
+21:06:22  I (18730) buffer: Ready, 5 readings waiting from before
+21:06:22  I (18740) bmp180: BMP180 ready (chip id 0x55)
+21:06:25  I (21500) main: Time synchronized
+21:06:25  I (21560) main: MQTT connected
+21:06:25  W (21620) main: Not delivered, buffered (6 stored)
+21:06:30  I (26680) main: Re-sent 6 buffered readings, 0 left
+21:06:30  I (27060) main: Published: 24.00 C, 1013.27 hPa
+21:06:35  I (31690) main: Published: 24.00 C, 1013.27 hPa
+21:06:40  I (36690) main: Published: 24.00 C, 1013.27 hPa
+21:06:41  I (37520) ota: Downloading http://host.wokwi.internal:8000/iot-node-1.0.2-broken.bin
+21:06:42  W (38510) ota: Version 1.0.2 was rolled back before, update skipped

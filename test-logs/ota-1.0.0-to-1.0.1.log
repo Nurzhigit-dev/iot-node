@@ -1,0 +1,27 @@
+# OTA update 1.0.0 -> 1.0.1 over MQTT + HTTP, then the retained OTA message is skipped
+# host time  device log (Wokwi serial port, Wi-Fi driver chatter and 10%-steps removed)
+
+20:53:15  I (528) main: Firmware version 1.0.0 (simulator build)
+...
+
+21:00:45  I (139978) ota: Downloading http://host.wokwi.internal:8000/iot-node.bin
+21:00:47  I (140128) ota: Updating 1.0.0 -> 1.0.1
+21:00:53  I (144198) main: Published: 24.00 C, 1013.27 hPa
+21:01:03  I (149338) main: Published: 24.00 C, 1013.27 hPa
+21:01:12  I (154218) main: Published: 24.00 C, 1013.27 hPa
+21:01:22  I (159158) main: Published: 24.00 C, 1013.27 hPa
+21:01:24  I (160838) ota: Downloaded 100%
+21:01:26  I (162668) ota: Update written to the other slot, restarting
+21:01:27  rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+21:01:28  I (5107) boot: Loaded app from partition at offset 0x1a0000
+21:01:28  I (2574) app_init: App version:      1.0.1
+21:01:28  I (2662) main: Firmware version 1.0.1 (simulator build)
+21:01:28  W (2662) ota: Firmware not confirmed yet: rollback in 120 s unless MQTT connects
+21:01:29  I (3002) buffer: Ready, 0 readings waiting from before
+21:01:29  I (3092) bmp180: BMP180 ready (chip id 0x55)
+21:01:35  I (9052) main: Time synchronized
+21:01:36  I (9162) main: MQTT connected
+21:01:36  I (9182) ota: New firmware confirmed, rollback cancelled
+21:01:36  I (9232) ota: Downloading http://host.wokwi.internal:8000/iot-node.bin
+21:01:36  I (9322) main: Published: 24.00 C, 1013.27 hPa
+21:01:36  W (9422) ota: Version 1.0.1 is already running, update skipped
