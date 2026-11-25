@@ -207,24 +207,6 @@ From an ESP-IDF terminal (**ESP-IDF: Open ESP-IDF Terminal**):
 
 The script builds the firmware as that version into `build-ota/` (so a running simulation isn't restarted), copies the image to `server/firmware/` and publishes its URL to the `ota` topic. The device downloads it, reboots into the other slot, confirms itself after connecting to MQTT and reports the new version on the `status` topic, which also shows up in the dashboard’s “Device status” table.
 
-## Design decisions
-
-- **Timestamps are set on the device, not on arrival.** Otherwise readings delivered from the buffer would all land at the moment of reconnection.
-- **A reading is “delivered” only after its own PUBACK.** `esp_mqtt_client_publish()` returning a message ID only means it was queued; the firmware waits for `MQTT_EVENT_PUBLISHED` with that message ID, ignoring acknowledgments of other messages.
-- **The broker keeps Telegraf’s session.** After a broker restart the device is usually back before Telegraf. Without a persistent session (Mosquitto `persistence true`, Telegraf `persistent_session = true`), the broker would acknowledge the re-sent readings and then drop them because nobody was subscribed yet. Measured by publishing 10 readings right after a broker restart: 3 were lost before the change, none after, even with Telegraf offline during the whole burst.
-- **At-least-once delivery, idempotent storage.** A lost acknowledgment can cause a duplicate send. InfluxDB treats a point with the same series and timestamp as the same point and overwrites it, so duplicates are harmless.
-- **Re-sending is time-boxed.** Each 5 s cycle spends at most half of it on the backlog, so a long outage doesn’t delay new measurements.
-- **Rollback is confirmed only after MQTT connects, with a deadline.** A firmware that boots but can’t reach the network is treated as broken. The bootloader alone would only roll back if the firmware reboots, so the firmware forces that after 120 s.
-- **OTA download runs in its own FreeRTOS task** so it doesn’t block the MQTT client or the measurements.
-
-## Known limitations
-
-- A device that boots without network access has no valid time and skips measurements until time is synchronized. A battery-backed RTC would fix this.
-- When the buffer is full, new readings are dropped. A ring buffer that drops the oldest readings would be better for most use cases.
-- If the network is down when a new firmware boots, it is rolled back even if it is fine: the device can’t tell the difference.
-- OTA uses plain HTTP without image signing. Production use needs HTTPS and signed images (Secure Boot).
-- MQTT runs without TLS or authentication.
-
 ## Tech stack
 
 C, ESP-IDF 6.1, FreeRTOS, I2C, MQTT (esp-mqtt), SPIFFS, SNTP, OTA · Mosquitto, Telegraf, InfluxDB 2, Grafana, nginx, Docker Compose · Wokwi
