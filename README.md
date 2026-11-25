@@ -1,12 +1,8 @@
 # IoT Sensor Node (ESP32-S3 + MQTT + InfluxDB + Grafana)
 
-An industrial-style IoT sensor node written in C with ESP-IDF. An ESP32-S3 reads temperature and pressure from a BMP180 sensor over I2C, publishes the readings over MQTT, and a Docker-based server stack stores them in InfluxDB and visualizes them in Grafana.
+An ESP32-S3 reads temperature and pressure from a BMP180 sensor over I2C and publishes the readings over MQTT. A Docker stack on a PC (Mosquitto, Telegraf, InfluxDB, Grafana) stores them and draws the graphs. The firmware is written in C with ESP-IDF.
 
-The firmware is built to survive real network conditions: it timestamps every reading on the device, buffers readings in flash while the network is down and re-sends them once it’s back, reconnects with exponential backoff, and can be updated over the air with automatic rollback.
-
-![Grafana during a 90 s broker outage: readings continue every 5 s without a gap, the delivery delay shows they were sent from the device's buffer afterwards](docs/img/grafana-outage.png)
-
-*The MQTT broker was stopped for 90 seconds. The temperature and pressure graphs have no gap, because the device kept measuring, stored the readings in flash and re-sent them after reconnecting. The “Delivery delay” panel shows how late each reading arrived: up to 100 s for the oldest buffered one, about 0 s otherwise.*
+The point of the project is what happens when things go wrong. Every reading is timestamped on the device. If the network or the broker goes down, the readings are kept in flash and sent again, oldest first, when the connection is back, so the graph has no hole in it. Wi-Fi reconnects with exponential backoff, and the firmware can be updated over the air with automatic rollback if the new version doesn't work.
 
 ## Architecture
 
@@ -20,43 +16,37 @@ flowchart LR
     F[nginx firmware server] -. OTA over HTTP .-> E
 ```
 
-| Component | Role |
-| --- | --- |
-| **BMP180** | Measures temperature and barometric pressure. Returns raw values that are compensated on the ESP32 using the sensor’s factory calibration coefficients. |
-| **ESP32-S3 firmware** | Reads the sensor, timestamps readings, publishes them over MQTT, buffers them in flash when offline, handles OTA updates. |
-| **Mosquitto** | MQTT broker. Decouples the device from everything that consumes its data. Persists sessions across restarts. |
-| **Telegraf** | Subscribes to the sensor and status topics, parses the payloads and writes points into InfluxDB. |
-| **InfluxDB 2** | Time-series database. Stores readings with the device timestamp; node name is stored as a tag. |
-| **Grafana** | Provisioned data source and dashboard (Flux queries): readings, delivery delay, device status. |
-| **nginx** | Serves firmware images for OTA updates, and the HTTP `Date` header used as a time fallback. |
+The BMP180 gives raw values, which the firmware turns into degrees and hPa using the calibration data stored in the sensor. Mosquitto sits between the device and everything else, so the device doesn't need to know who is listening. Telegraf subscribes to the topics and writes into InfluxDB, using the timestamp from the device. Grafana reads from InfluxDB. nginx serves the firmware files for OTA updates, and its HTTP `Date` header doubles as a backup time source.
 
-## Features
+## What the firmware does
 
-- **I2C sensor driver** for the BMP180 using the ESP-IDF `i2c_master` driver: chip ID check, calibration readout, and the integer compensation algorithm from the datasheet. If the sensor is missing, the node still goes online and keeps looking for it; the log lists every I2C address that answers.
-- **MQTT publishing** with QoS 1, JSON payloads, and a `status` topic with **Last Will and Testament** (the broker publishes `offline` if the device disappears).
-- **Device-side timestamps** via SNTP, with a fallback to the HTTP `Date` header when NTP (UDP 123) is blocked.
-- **Store-and-forward buffering**: every reading waits for the broker’s PUBACK; undelivered readings are stored in a SPIFFS file and re-sent oldest-first after reconnecting. Records are deleted only after the broker acknowledges them, and the file survives reboots.
-- **Exponential backoff with jitter** for Wi-Fi reconnects (1 s → 2 s → 4 s … capped at 60 s), with the disconnect reason in the log.
-- **OTA firmware updates** triggered over MQTT, using A/B app partitions and **automatic rollback**: a new firmware has 120 s to reach the MQTT broker, otherwise it marks itself invalid and the bootloader returns to the previous one. The device refuses the version it is already running and versions that were rolled back before.
-- **One-command server stack** with Docker Compose, including a ready-made Grafana dashboard.
+The sensor driver uses the ESP-IDF `i2c_master` driver. It checks the chip ID, reads the calibration, and runs the integer compensation algorithm from the datasheet. If the sensor isn't found, the node still goes online and keeps looking for it, and the log lists every I2C address that does answer, which helps when debugging wiring.
+
+Readings go out over MQTT with QoS 1 as JSON. There is also a retained `status` topic with a Last Will, so the broker publishes `offline` if the device disappears.
+
+Time comes from SNTP. If NTP is blocked (UDP 123), the firmware falls back to the `Date` header of an HTTP request to the server.
+
+A reading counts as delivered only when the broker acknowledges that exact message. Anything else is appended to a file in a SPIFFS partition and re-sent in order after reconnecting. A record is deleted only after it was acknowledged, and the file survives reboots and power loss.
+
+Wi-Fi reconnects after 1 s, 2 s, 4 s and so on up to 60 s, with some random jitter, and the log shows why a connection failed (wrong password, network not found).
+
+OTA updates are triggered by publishing a URL to the `ota` topic. The image is written to the other of two app partitions. A new firmware has 120 seconds to connect to the MQTT broker; if it doesn't, it marks itself invalid and the bootloader goes back to the old version. The device refuses to install the version it is already running, and versions that were rolled back before.
 
 ## Test results
 
-The first three were run on the firmware in the Wokwi simulator against the Docker stack, then the outage and OTA tests were repeated on real hardware (see below). The full device logs are in [`test-logs/`](test-logs).
+I tested buffering and OTA first in the Wokwi simulator, then on a real board. Full device logs are in [`test-logs/`](test-logs).
 
-| Test | What happened |
-| --- | --- |
-| **Broker outage** (90 s) | 18 readings buffered in flash. The device reconnected 1 s after the broker came back and re-sent all 18 within 3 s. Telegraf reconnected only 10 s later, and still received every one of them (persistent session). Largest step between two stored readings: **5 s, no gap**. |
-| **OTA 1.0.0 → 1.0.1** | 1 MB image downloaded while the device kept publishing; reboot into the other slot; confirmed after connecting to MQTT. The OTA message was retained on the broker, so the new firmware received it again after the reboot and correctly skipped it instead of updating in a loop. |
-| **Rollback** | OTA to a deliberately broken 1.0.2 that cannot reach the broker. After the 30 s confirm timeout (shortened for the test) it rolled back to 1.0.1 by itself. The 5 readings 1.0.2 had buffered survived the reboots and were delivered by 1.0.1. Offering 1.0.2 again: `Version 1.0.2 was rolled back before, update skipped`. |
+### Broker outage (simulator)
 
-**On real hardware** (ESP32-S3 DevKitC-1 + BMP180 over Wi-Fi, server on a PC in the same network):
+I stopped the MQTT broker for 90 seconds. The device buffered 18 readings, reconnected one second after the broker came back and sent all 18 within 3 seconds. Largest gap between two stored readings: 5 seconds, which is the normal measurement period.
 
-| Test | What happened |
-| --- | --- |
-| **Boot** | Wi-Fi connected after 3 s. The sensor was missing for the first two attempts and found on the third, 5 s later; the node was online and publishing in the meantime ([log](test-logs/hardware-boot.log)). |
-| **Broker outage** (90 s) | 19 readings buffered in flash, all re-sent 5 s after the broker returned. Largest step between two stored readings: **5 s, no gap** (`tools/outage-test.ps1` reports `PASS`) ([log](test-logs/hardware-broker-outage.log)). |
-| **OTA 1.0.0 → 1.0.1** over Wi-Fi | Downloaded in 21 s, rebooted into the other slot and confirmed after connecting to MQTT. NTP did not answer after this reboot, so the HTTP `Date` fallback set the clock ([log](test-logs/hardware-ota-1.0.0-to-1.0.1.log)). |
+![Grafana during a 90 s broker outage](docs/img/grafana-outage.png)
+
+Temperature and pressure show no gap. The "Delivery delay" panel shows how long after the measurement each reading arrived: the oldest buffered one was 100 seconds late, the rest are close to zero.
+
+### OTA update 1.0.0 to 1.0.1 (simulator)
+
+The device downloaded the 1 MB image while it kept publishing, rebooted into the other slot, and confirmed the new version after connecting to MQTT. The OTA message was still on the broker, so the new firmware received it again after the reboot and correctly skipped it instead of updating in a loop.
 
 ![Serial log of the OTA update from 1.0.0 to 1.0.1](docs/img/ota-log.png)
 
@@ -74,13 +64,31 @@ I (9182) ota: New firmware confirmed, rollback cancelled
 W (9422) ota: Version 1.0.1 is already running, update skipped
 ```
 
+### Rollback (simulator)
+
+I built a 1.0.2 that points at the wrong MQTT port and offered it over OTA, with the confirm timeout shortened to 30 seconds. It installed, couldn't reach the broker, and rolled back to 1.0.1 by itself. The 5 readings it had buffered survived both reboots and were delivered by 1.0.1. When I offered 1.0.2 again, the device answered `Version 1.0.2 was rolled back before, update skipped`.
+
+### Real hardware
+
+The same tests on an ESP32-S3 DevKitC-1 with a BMP180, talking to the PC over Wi-Fi.
+
+![Grafana with live data from the real board](docs/img/grafana-hardware.png)
+
+This is the last 5 minutes of live data from the board. Readings arrive every 5 seconds. The temperature moves in 0.1 °C steps between 27.2 and 27.5, and the pressure wobbles by 0.1 to 0.2 hPa, which is normal for a BMP180 without oversampling. The delivery delay is flat at about 1.7 seconds. Since it doesn't change, it is most likely the difference between the board's clock and the PC's clock rather than network time.
+
+The board joined Wi-Fi after 3 seconds. The sensor wasn't found on the first two attempts and was found on the third, 5 seconds later, and the node was already online and publishing in between ([log](test-logs/hardware-boot.log)). That was probably a loose jumper wire.
+
+For the outage I stopped the broker for 90 seconds. The board buffered 19 readings and sent all of them 5 seconds after the broker returned, and `tools/outage-test.ps1` reported no gap ([log](test-logs/hardware-broker-outage.log)).
+
+The OTA update from 1.0.0 to 1.0.1 downloaded in 21 seconds over Wi-Fi, rebooted, and confirmed itself. NTP didn't answer after that reboot, so the HTTP `Date` fallback set the clock, which was a nice accidental test of that path ([log](test-logs/hardware-ota-1.0.0-to-1.0.1.log)).
+
 ## Repository structure
 
 ```
 iot-node/
 ├── main/                     ESP-IDF application
 │   ├── main.c                startup, MQTT, time sync, main loop
-│   ├── app_config.h          all settings (simulator/board, topics, intervals, pins)
+│   ├── app_config.h          settings: simulator or board, topics, intervals, pins
 │   ├── secrets.example.h     template for Wi-Fi and server address on a real board
 │   ├── bmp180.c / .h         sensor driver
 │   ├── wifi.c / .h           Wi-Fi station with exponential backoff
@@ -91,82 +99,85 @@ iot-node/
 │   ├── compose.yaml
 │   ├── mosquitto/mosquitto.conf
 │   ├── telegraf/telegraf.conf
-│   ├── grafana/provisioning/ data source and the “IoT Node” dashboard
+│   ├── grafana/provisioning/ data source and the "IoT Node" dashboard
 │   └── firmware/             firmware images served for OTA
 ├── tools/
 │   ├── ota.ps1               build a version and offer it to the device
-│   └── outage-test.ps1       stop/start the broker, then check InfluxDB for gaps
-├── test-logs/                device logs of the tests above
-├── partitions.csv            flash layout (2 OTA slots + storage)
-├── diagram.json, wokwi.toml  Wokwi simulator circuit and config
+│   └── outage-test.ps1       stop and start the broker, then check InfluxDB for gaps
+├── test-logs/                device logs from the tests above
+├── partitions.csv            flash layout
+├── diagram.json, wokwi.toml  Wokwi circuit and config
 └── sdkconfig                 ESP-IDF project configuration
 ```
 
-## MQTT interface
+## MQTT topics
 
-| Topic | Direction | Payload |
-| --- | --- | --- |
-| `iot-node-6g7l/node1/env` | device → server | `{"ts":1760780000123,"temperature":24.00,"pressure":1013.27}`, `ts` in Unix milliseconds |
-| `iot-node-6g7l/node1/status` | device → server (retained) | `online, fw 1.0.0`, or `offline` (Last Will) |
-| `iot-node-6g7l/node1/ota` | server → device | URL of a firmware image, e.g. `http://<server>:8000/iot-node-1.0.1.bin` |
+```
+iot-node-6g7l/node1/env      device to server   {"ts":1760780000123,"temperature":24.00,"pressure":1013.27}
+                                                ts is Unix time in milliseconds
+iot-node-6g7l/node1/status   device to server   "online, fw 1.0.0" or "offline" (Last Will), retained
+iot-node-6g7l/node1/ota      server to device   URL of a firmware image,
+                                                e.g. http://<server>:8000/iot-node-1.0.1.bin
+```
 
 ## Flash layout
 
-| Partition | Size | Purpose |
-| --- | --- | --- |
-| `nvs` | 24 KB | Wi-Fi calibration and system settings |
-| `otadata` | 8 KB | Which OTA slot to boot |
-| `phy_init` | 4 KB | RF calibration data |
-| `ota_0`, `ota_1` | 1.5 MB each | Two firmware slots (A/B updates) |
-| `storage` | 896 KB | SPIFFS file system for the offline buffer |
+The board has 4 MB of flash, split like this (see `partitions.csv`):
+
+```
+nvs        24 KB    Wi-Fi calibration and system settings
+otadata     8 KB    which OTA slot to boot
+phy_init    4 KB    RF calibration data
+ota_0     1.5 MB    firmware slot A
+ota_1     1.5 MB    firmware slot B
+storage   896 KB    SPIFFS file system for the offline buffer
+```
 
 ## Getting started
 
 ### Server
 
-Requires Docker Desktop.
+You need Docker Desktop.
 
 ```
 cd server
 docker compose up -d
 ```
 
-- Grafana: http://localhost:3000 (default login `admin` / `admin`), dashboard **IoT Node**: http://localhost:3000/d/iot-node
-- InfluxDB: http://localhost:8086
-- MQTT broker: `localhost:1883`
-
-The credentials in `compose.yaml` are development defaults for a local machine only. After editing the dashboard JSON, run `docker compose restart grafana`.
+Grafana is at http://localhost:3000 (login `admin` / `admin`) and the dashboard is at http://localhost:3000/d/iot-node. InfluxDB is on port 8086 and the MQTT broker on 1883. The credentials in `compose.yaml` are development defaults for a local machine only. After editing the dashboard JSON, run `docker compose restart grafana`.
 
 ### Firmware in the simulator
 
-Requires VS Code with the ESP-IDF extension (ESP-IDF v6.1) and the Wokwi Simulator extension.
+You need VS Code with the ESP-IDF extension (ESP-IDF v6.1) and the Wokwi Simulator extension.
 
-1. Open the project folder, set the target to `esp32s3`. `main/app_config.h` has `USE_SIMULATOR 1`.
-2. Build: **ESP-IDF: Build Your Project**.
-3. Run: **Wokwi: Start Simulator**. The simulated ESP32 reaches the local server through `host.wokwi.internal`. Its serial port is also available on `rfc2217://localhost:4000`.
+1. Open the project folder and set the target to `esp32s3`. `main/app_config.h` has `USE_SIMULATOR 1`.
+2. Build with **ESP-IDF: Build Your Project**.
+3. Start **Wokwi: Start Simulator**. The simulated ESP32 reaches your PC through `host.wokwi.internal`. Its serial port is also available on `rfc2217://localhost:4000`.
 
-Keep the simulator tab visible: VS Code pauses the simulation when its window is hidden, and the device clock stops with it.
+Keep the simulator tab visible. VS Code pauses the simulation when its window is hidden, and the device clock stops with it.
 
 ### Firmware on a real board
 
-**You need:** an ESP32-S3 DevKitC-1 (any flash size from 4 MB), a BMP180 module (GY-68), four jumper wires, and a USB data cable.
+You need an ESP32-S3 DevKitC-1, a BMP180 module (GY-68), four jumper wires and a USB cable that carries data.
 
-| BMP180 module | ESP32-S3 DevKitC-1 |
-| --- | --- |
-| VIN (or 3.3V) | 3V3 |
-| GND | GND |
-| SDA | GPIO 8 |
-| SCL | GPIO 9 |
+Wiring:
 
-1. In `main/app_config.h` set `USE_SIMULATOR` to `0`.
-2. Copy `main/secrets.example.h` to `main/secrets.h` and fill in your Wi-Fi (2.4 GHz) and the IPv4 address of the PC that runs Docker (`ipconfig`). `secrets.h` is git-ignored.
-3. Let the board reach the PC. On Windows the Wi-Fi network must be set to **Private** (Settings → Network & internet → Wi-Fi → your network → Network profile type), and the ports need a firewall rule. Run this once in an administrator PowerShell:
+```
+BMP180 VIN (or 3.3V)  to  3V3
+BMP180 GND            to  GND
+BMP180 SDA            to  GPIO 8
+BMP180 SCL            to  GPIO 9
+```
+
+1. In `main/app_config.h`, set `USE_SIMULATOR` to `0`.
+2. Copy `main/secrets.example.h` to `main/secrets.h` and fill in your Wi-Fi name (2.4 GHz only), the password, and the IPv4 address of the PC that runs Docker (`ipconfig` shows it). `secrets.h` is git-ignored.
+3. On Windows, set the Wi-Fi network to Private (Settings, Network & internet, Wi-Fi, your network, Network profile type) and allow the two ports through the firewall. Run this once in an administrator PowerShell:
    ```
    New-NetFirewallRule -DisplayName "IoT node: MQTT and OTA" -Direction Inbound -Protocol TCP -LocalPort 1883,8000 -RemoteAddress LocalSubnet -Profile Private -Action Allow
    ```
-4. Connect the board. Either USB port works: the logs go to both. In VS Code select the COM port (**ESP-IDF: Select Port to Use**), then **ESP-IDF: Build, Flash and Start a Monitor**. Or, in an ESP-IDF terminal: `idf.py -p COM5 flash monitor`. Leave the monitor with `Ctrl+]`.
+4. Plug in the board and pick its COM port with **ESP-IDF: Select Port to Use**, then run **ESP-IDF: Build, Flash and Start a Monitor**. In an ESP-IDF terminal this is `idf.py -p COM5 flash monitor`, and `Ctrl+]` leaves the monitor.
 
-The first boot formats the flash storage, which takes a few seconds. After that you should see:
+The first boot formats the storage partition, which takes a few seconds. After that the log should look like this:
 
 ```
 I (...) main: Firmware version 1.0.0 (hardware build)
@@ -177,14 +188,14 @@ I (...) main: MQTT connected
 I (...) main: Published: 22.40 C, 1009.85 hPa
 ```
 
-| Log message | Meaning |
-| --- | --- |
-| `bmp180: No device at 0x77`, followed by a bus scan | Sensor not found: check SDA/SCL, 3.3 V and GND. The scan lists the addresses that do answer. |
-| `Unexpected chip id 0x58: this is a BMP280` | The module is a BMP280 (often sold as BMP180); it needs a different driver. |
-| `wifi: Disconnected (reason 201, network not found ...)` | Wrong SSID, or a 5 GHz-only network. |
-| `wifi: Disconnected (reason 15, wrong password?)` | Wrong Wi-Fi password. |
-| `main: MQTT error (broker mqtt://192.168.x.x)`, repeating | The board can't reach the PC: wrong `SERVER_HOST`, firewall (step 3), or a guest network that isolates devices. |
-| `main: No valid time yet` | No NTP and port 8000 on the PC is not reachable either. |
+If something is wrong, the log usually says what:
+
+- `bmp180: No device at 0x77`, followed by a bus scan: the sensor isn't found. Check SDA, SCL, 3.3 V and GND. The scan lists the addresses that did answer.
+- `Unexpected chip id 0x58: this is a BMP280`: the module is a BMP280, which is often sold as a BMP180. It needs a different driver.
+- `wifi: Disconnected (reason 201, network not found ...)`: wrong SSID, or a 5 GHz-only network.
+- `wifi: Disconnected (reason 15, wrong password?)`: wrong Wi-Fi password.
+- `main: MQTT error (broker mqtt://192.168.x.x)`, repeating: the board can't reach the PC. Check `SERVER_HOST`, the firewall rule from step 3, and whether your network isolates devices from each other (guest networks often do).
+- `main: No valid time yet`: NTP isn't answering and port 8000 on the PC isn't reachable either.
 
 To go back to the simulator, set `USE_SIMULATOR` to `1` again.
 
@@ -194,7 +205,7 @@ To go back to the simulator, set `USE_SIMULATOR` to `1` again.
 .\tools\outage-test.ps1
 ```
 
-It stops the broker for 90 s, starts it again, and checks InfluxDB: `PASS: no gap` means every reading measured during the outage arrived. By hand: `docker compose stop mosquitto`, wait, `docker compose start mosquitto`.
+This stops the broker for 90 seconds, starts it again, and asks InfluxDB whether any reading is missing. `PASS: no gap` means everything measured during the outage arrived. You can also do it by hand with `docker compose stop mosquitto`, a wait, and `docker compose start mosquitto`.
 
 ### Testing OTA
 
@@ -202,11 +213,11 @@ From an ESP-IDF terminal (**ESP-IDF: Open ESP-IDF Terminal**):
 
 ```
 .\tools\ota.ps1 -Version 1.0.1                        # simulator
-.\tools\ota.ps1 -Version 1.0.1 -Server 192.168.x.x    # real board: the PC's IP
+.\tools\ota.ps1 -Version 1.0.1 -Server 192.168.x.x    # real board, the PC's IP
 ```
 
-The script builds the firmware as that version into `build-ota/` (so a running simulation isn't restarted), copies the image to `server/firmware/` and publishes its URL to the `ota` topic. The device downloads it, reboots into the other slot, confirms itself after connecting to MQTT and reports the new version on the `status` topic, which also shows up in the dashboard’s “Device status” table.
+The script builds the firmware as that version into `build-ota/` (so a running simulation isn't restarted), copies the image to `server/firmware/` and publishes its URL to the `ota` topic. The device downloads it, reboots into the other slot, confirms itself after connecting to MQTT and reports the new version on the status topic, which also shows up in the dashboard.
 
 ## Tech stack
 
-C, ESP-IDF 6.1, FreeRTOS, I2C, MQTT (esp-mqtt), SPIFFS, SNTP, OTA · Mosquitto, Telegraf, InfluxDB 2, Grafana, nginx, Docker Compose · Wokwi
+C, ESP-IDF 6.1, FreeRTOS, I2C, MQTT (esp-mqtt), SPIFFS, SNTP, OTA. Mosquitto, Telegraf, InfluxDB 2, Grafana, nginx, Docker Compose. Wokwi for simulation.
